@@ -1,0 +1,54 @@
+H,e,a,v,y, ,o,i,l, ,o,l,d, ,1
+O,f,f,s,h,o,r,e, ,W,i,n,d
+O,t,h,e,r, ,n,o,n,-,R,E,S, ,D,K,W,1, ,P
+O,t,h,e,r, ,n,o,n,-,R,E,S, ,F,I,0,0, ,P
+P,S, ,O,p,e,n
+L,i,g,n,i,t,e, ,o,l,d, ,1
+G,a,s, ,C,C,G,T, ,p,r,e,s,e,n,t, ,2, ,C,C,S
+L,i,g,n,i,t,e, ,o,l,d, ,2, ,B,i,o
+S,o,l,a,r, ,T,h,e,r,m,a,l
+P,2,G
+G,a,s, ,c,o,n,v,e,n,t,i,o,n,a,l, ,o,l,d, ,2
+H,a,r,d, ,c,o,a,l, ,o,l,d, ,2, ,B,i,o
+O,t,h,e,r, ,n,o,n,-,R,E,S, ,F,R,0,0, ,P
+O,i,l, ,s,h,a,l,e, ,n,e,w
+G,a,s, ,c,o,n,v,e,n,t,i,o,n,a,l, ,o,l,d, ,2, ,B,i,o
+G,a,s, ,O,C,G,T, ,n,e,w
+N,u,c,l,e,a,r
+O,t,h,e,r, ,n,o,n,-,R,E,S, ,D,E,0,0, ,P
+G,a,s, ,C,C,G,T, ,p,r,e,s,e,n,t, ,2
+B,a,t,t,e,r,y
+G,a,s, ,O,C,G,T, ,o,l,d
+O,i,l, ,s,h,a,l,e, ,o,l,d
+H,a,r,d, ,c,o,a,l, ,o,l,d, ,1
+S,o,l,a,r, ,P,V
+O,n,s,h,o,r,e, ,W,i,n,d
+O,t,h,e,r, ,n,o,n,-,R,E,S, ,D,K,E,1, ,P
+H,e,a,v,y, ,o,i,l, ,o,l,d, ,1, ,B,i,o
+O,i,l, ,s,h,a,l,e, ,n,e,w, ,B,i,o
+G,a,s, ,C,C,G,T, ,n,e,w
+G,a,s, ,C,C,G,T, ,n,e,w, ,C,C,S
+R,e,s,e,r,v,o,i,r
+H,e,a,v,y, ,o,i,l, ,o,l,d, ,2
+H,a,r,d, ,c,o,a,l, ,n,e,w
+G,a,s, ,c,o,n,v,e,n,t,i,o,n,a,l, ,o,l,d, ,1
+G,a,s, ,C,C,G,T, ,p,r,e,s,e,n,t, ,1, ,C,C,S
+H,a,r,d, ,c,o,a,l, ,o,l,d, ,1, ,B,i,o
+G,a,s, ,C,C,G,T, ,o,l,d, ,1
+G,a,s, ,C,C,G,T, ,p,r,e,s,e,n,t, ,1
+L,i,g,n,i,t,e, ,n,e,w
+L,i,g,n,i,t,e, ,o,l,d, ,1, ,B,i,o
+H,a,r,d, ,c,o,a,l, ,n,e,w, ,B,i,o
+O,t,h,e,r, ,n,o,n,-,R,E,S, ,U,K,0,0, ,P
+D,S,R
+G,a,s, ,C,C,G,T, ,o,l,d, ,2, ,B,i,o
+P,S, ,C,l,o,s,e,d
+L,i,g,h,t, ,o,i,l
+O,t,h,e,r, ,n,o,n,-,R,E,S
+G,a,s, ,C,C,G,T, ,o,l,d, ,2
+O,t,h,e,r, ,n,o,n,-,R,E,S, ,M,T,0,0, ,P
+H,a,r,d, ,c,o,a,l, ,o,l,d, ,2
+R,u,n,-,o,f,-,R,i,v,e,r
+O,t,h,e,r, ,R,E,S
+G,a,s, ,C,C,G,T, ,C,C,S
+L,i,g,n,i,t,e, ,o,l,d, ,2
