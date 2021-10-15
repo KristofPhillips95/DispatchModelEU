@@ -10,7 +10,7 @@ df_lines = pd.read_excel(io = "../Input Data/TYNDP-2020-Scenario-Datafile.xlsx",
 df_gen = df_gen.rename(columns={"Node/Line" : "Node"})
 
 ####
-#Creating file with all generator ideas present in dataset, and their total capacities
+#Creating file with all generator present in dataset, and their total capacities
 #####
 #generators = set(df_gen["Generator_ID"])
 #gen_cap_dict = {generator : sum(df_gen[ (df_gen["Generator_ID"] == generator) & (df_gen["Year"] == 2040) ].Value)/1000 for generator in generators}
@@ -21,8 +21,15 @@ df_gen = df_gen.rename(columns={"Node/Line" : "Node"})
 df_gen_dict = pd.read_excel(io = "../Input Data/Mapping_generators.xlsx",engine = 'openpyxl',sheet_name= "Mapping" )
 
 gen_dict = dict(zip(df_gen_dict.Generator_ID,df_gen_dict.Mapped_to))
+gen_dict_st = dict(zip(df_gen_dict.Mapped_to,df_gen_dict.Super_type))
+
 df_gen_mapped = df_gen.replace(gen_dict)
+
 df_gen_mapped = df_gen_mapped[df_gen_mapped["Generator_ID"]!= "NI"]
+df_gen_mapped['Super_type'] = df_gen_mapped['Generator_ID'].replace(gen_dict_st)
+
+
+df_gen['Super_type'] = df_gen['Generator_ID'].replace(gen_dict_st)
 
 
 #Create sets of nodes, lines, and generators
