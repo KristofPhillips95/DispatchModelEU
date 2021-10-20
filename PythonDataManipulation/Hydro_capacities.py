@@ -5,7 +5,7 @@ list_of_files = os.listdir("../Input Data/Pan-European Climate Database (1)/Pan-
 
 df_energy_capacities = pd.DataFrame()
 
-##Hydro energy capacities
+#Hydro energy capacities
 # for file in list_of_files:
 #     xls_hydro = pd.ExcelFile(io = f"../Input Data/Pan-European Climate Database (1)/Pan-European Climate Database/Hydro data/{file}",engine = 'openpyxl')
 #     node = file[11:15]
@@ -16,8 +16,9 @@ df_energy_capacities = pd.DataFrame()
 #     PS_O =  df_info[df_info["Technology"] == "Pump storage - Open Loop"]["Hydro Storage Size (GWh)"].iloc[0]
 #     PS_C =  df_info[df_info["Technology"] == "Pump Storage - Closed Loop"]["Hydro Storage Size (GWh)"].iloc[0]
 #     ROR =  df_info[df_info["Technology"] == "Run-of-River and pondage"]["Hydro Storage Size (GWh)"].iloc[0]
-#     df_row = pd.DataFrame({"Node":[node],"ROR" : [ROR],"Reservoir" : [reservoir], "PS_O" : [PS_O], "PS_C":[PS_C] })
+#     df_row = pd.DataFrame({"Node":[node],"ROR" : [ROR],"RES" : [reservoir], "PS_O" : [PS_O], "PS_C":[PS_C] })
 #     df_energy_capacities = df_energy_capacities.append(df_row)
+# df_energy_capacities = df_energy_capacities.multiply([1,1000,1000,1000,1000])
 # df_energy_capacities.to_csv("../Input Data/hydro_capacities/energy_caps.csv")
 
 #ROR flows
@@ -79,5 +80,27 @@ weekly_range = pd.date_range(start="1/1/1984",end="31/12/1984",freq="w")
 df_ps_flows["Time_index"] = weekly_range
 df_ps_flows = df_ps_flows.set_index("Time_index")
 df_ps_flows = df_ps_flows.resample("H").ffill().divide(24*7).multiply(1000)
-df_ps_flows = df_ps_flows.append( df_ps_flows.iloc[[-1]*24] )
-df_ps_flows.to_csv("../Input Data/time_series_output/PS.csv")
+df_ps_flows = df_ps_flows.append( df_ps_flows.iloc[[-1]*24] ).fillna(0)
+df_ps_flows.to_csv("../Input Data/time_series_output/PS_O.csv")
+
+#PS closed flows
+# counter = 0
+# df_ps_flows = pd.DataFrame()
+# for file in list_of_files:
+#     print(counter)
+#     counter+=1
+#     xls_hydro = pd.ExcelFile(io = f"../Input Data/Pan-European Climate Database (1)/Pan-European Climate Database/Hydro data/{file}",engine = 'openpyxl')
+#     node = file[11:15]
+#     df_flows = pd.read_excel(xls_hydro,"Pump Storage - Closed Loop")
+#     assert (df_flows.iloc[:,3].iloc[0] == 1984)
+#     column = df_flows.iloc[1:,3]
+#
+#     df_ps_flows[node] = column
+# df_ps_flows = df_ps_flows.drop(54)
+# weekly_range = pd.date_range(start="1/1/1984",end="31/12/1984",freq="w")
+# df_ps_flows["Time_index"] = weekly_range
+# df_ps_flows = df_ps_flows.set_index("Time_index")
+# df_ps_flows = df_ps_flows.resample("H").ffill().divide(24*7).multiply(1000)
+# df_ps_flows = df_ps_flows.append( df_ps_flows.iloc[[-1]*24] )
+
+#df_ps_flows.to_csv("../Input Data/time_series_output/PS_C.csv")
