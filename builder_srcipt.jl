@@ -38,7 +38,7 @@ end
 using Gurobi
 
 values_kept = Dict()
-endtime = 24*100
+endtime = 24*10
 year = 2040
 CY = 1984
 VOLL = 1000

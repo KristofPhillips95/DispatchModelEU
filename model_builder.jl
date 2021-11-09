@@ -244,10 +244,10 @@ function process_DSR_capacities(m,countries)
         capacity = reading_country[reading_country[!,"Generator_ID"] .== "DSR",:].Value
         if length(capacity) == 1
             m.ext[:parameters][:DSR][:capacities][country] = capacity[1]
-            m.ext[:parameters][:DSR][:horizons][country] = 5
+            m.ext[:parameters][:DSR][:horizons][country] = 3
         elseif length(capacity) == 0
             m.ext[:parameters][:DSR][:capacities][country] = 0
-            m.ext[:parameters][:DSR][:horizons][country] = 5
+            m.ext[:parameters][:DSR][:horizons][country] = 3
         else
             @show("DSR capacity not uniqueliy defined for $country")
         end
@@ -334,6 +334,35 @@ function process_hydro_inflow_time_series!(m::Model,countries)
         end
     end
 end
+
+function remove_capacity_country(m::Model,country::String)
+    m.ext[:parameters][:DSR][:capacities][country] = 0
+    for technology in m.ext[:sets][:technologies][country]
+        print(technology)
+        m.ext[:parameters][:technologies][:capacities][country][technology] = 0
+    end
+    for technology in m.ext[:sets][:flat_run_technologies][country]
+        m.ext[:parameters][:technologies][:total_gen][country][technology] = 0
+    end
+end
+
+function remove_capacity_country(m::Model,country::String)
+    m.ext[:parameters][:DSR][:capacities][country] = 0
+    for technology in m.ext[:sets][:technologies][country]
+        print(technology)
+        m.ext[:parameters][:technologies][:capacities][country][technology] = 0
+    end
+    for technology in m.ext[:sets][:flat_run_technologies][country]
+        m.ext[:parameters][:technologies][:total_gen][country][technology] = 0
+    end
+end
+
+function set_demand_country(m::Model,country::String,demand::Int)
+    m.ext[:timeseries][:demand][country] .= demand
+end
+
+
+
 ##
 function build_base_model!(m::Model,endtime,VOLL,CO2_price)
     countries =  m.ext[:sets][:countries]
@@ -564,7 +593,6 @@ function build_isolated_model_DSR_shift!(m::Model,endtime,VOLL,CO2_price,DSR_pri
     CO2_cost = m.ext[:expressions][:CO2_cost]
 
 
-    #DSR_shed = m.ext[:variables][:DSR] = @variable(m, [c = countries, t = timesteps],base_name = "DSR")
 
     DSR_up = m.ext[:variables][:DSR_up] = @variable(m, [c = countries, t = timesteps],lower_bound = 0,base_name = "DSR_up")
     DSR_down = m.ext[:variables][:DSR_down] = @variable(m, [c = countries, t = timesteps,shift_from = t-dsr_horizons[c]:t+dsr_horizons[c] ],lower_bound = 0,base_name = "DSR_down")
@@ -693,7 +721,7 @@ function build_NTC_model_DSR!(m:: Model,endtime,VOLL,CO2_price,DSR_price)
         m.ext[:objective] = @objective(m,Min, sum(VOM_cost) + sum(CO2_cost) + sum(fuel_cost) + sum(load_shedding_cost) + sum(transport_cost) + sum(DSR_cost))
 end
 
-function build_NTC_model_DSR_shift!(m:: Model,endtime,VOLL,CO2_price,DSR_price)
+function build_NTC_model_DSR_shift!(m:: Model,endtime,VOLL,CO2_price,DSR_shift_price,sheddable_fraction,DSR_shed_price)
     build_base_model!(m::Model,endtime,VOLL,CO2_price)
 
     countries = m.ext[:sets][:countries]
@@ -727,19 +755,23 @@ function build_NTC_model_DSR_shift!(m:: Model,endtime,VOLL,CO2_price,DSR_price)
 
     DSR_up = m.ext[:variables][:DSR_up] = @variable(m, [c = countries, t = timesteps],lower_bound = 0,base_name = "DSR_up")
     DSR_down = m.ext[:variables][:DSR_down] = @variable(m, [c = countries, t = timesteps,shift_from = t-dsr_horizons[c]:t+dsr_horizons[c] ],lower_bound = 0,base_name = "DSR_down")
+    DSR_shed = m.ext[:variables][:DSR_shed] = @variable(m, [c = countries, t = timesteps],lower_bound = 0,base_name = "DSR_shed")
+
+    m.ext[:constraints][:DSR_shed_limits] = @constraint(m, [c = countries, t = timesteps],
+    DSR_shed[c,t] <= dsr_capacities[c]*sheddable_fraction)
 
     m.ext[:constraints][:DSR_up_limits] = @constraint(m, [c = countries, t = timesteps],
     DSR_up[c,t] <= dsr_capacities[c])
 
     m.ext[:constraints][:DSR_down_limits] = @constraint(m, [c = countries, t = timesteps],
-    sum(DSR_down[c,t,shift_from] for shift_from in t-dsr_horizons[c]:t+dsr_horizons[c] if (1<=shift_from<=endtime)) <= dsr_capacities[c] )
+    sum(DSR_down[c,t,shift_from] for shift_from in t-dsr_horizons[c]:t+dsr_horizons[c] if (1<=shift_from<=endtime)) + DSR_shed[c,t] <=  dsr_capacities[c] )
 
     m.ext[:constraints][:DSR_balance] = @constraint(m, [c = countries, shift_from = timesteps],
     sum(DSR_down[c,shift_to,shift_from] for shift_to in shift_from-dsr_horizons[c]:shift_from+dsr_horizons[c] if (1<=shift_to<=endtime)) == DSR_up[c,shift_from] )
 
     # Demand met for all timesteps
     m.ext[:constraints][:demand_met] = @constraint(m,[c = countries, time = timesteps],
-        total_production_timestep[c,time] + load_shedding[c,time]  - curtailment[c,time] + sum(el_import[c,nb,time] for nb in connections[c])
+        total_production_timestep[c,time] + load_shedding[c,time] + DSR_shed[c,time]  - curtailment[c,time] + sum(el_import[c,nb,time] for nb in connections[c])
         == demand[c][time] + sum(el_export[c,nb,time] for nb in connections[c]) + DSR_up[c,time] - sum(DSR_down[c,time,shift_from] for shift_from in time-dsr_horizons[c]:time+dsr_horizons[c] if (1<=shift_from<=endtime))  + sum(charge[c,tech,time] for tech in storage_technologies[c])
     )
 
@@ -748,8 +780,38 @@ function build_NTC_model_DSR_shift!(m:: Model,endtime,VOLL,CO2_price,DSR_price)
     load_shedding_cost = m.ext[:expressions][:load_shedding_cost]
     CO2_cost = m.ext[:expressions][:CO2_cost]
     transport_cost =m.ext[:expressions][:transport_cost]= el_import*0.1
-    DSR_cost = m.ext[:expressions][:DSR_cost] = @expression(m,[c = countries, t = timesteps],
-    DSR_up[c,t] * DSR_price
+    DSR_cost = m.ext[:expressions][:DSR_shift_cost] = @expression(m,[c = countries, t = timesteps],
+    DSR_up[c,t] * DSR_shift_price
     )
-    m.ext[:objective] = @objective(m,Min, sum(VOM_cost) + sum(CO2_cost) + sum(fuel_cost) + sum(load_shedding_cost) + sum(DSR_cost) + sum(transport_cost))
+
+    DSR_shed_cost = m.ext[:expressions][:DSR_shed_cost] = @expression(m,[c = countries, t = timesteps],
+    DSR_shed[c,t] * DSR_shed_price
+    )
+    m.ext[:objective] = @objective(m,Min, sum(VOM_cost) + sum(CO2_cost) + sum(fuel_cost) + sum(load_shedding_cost) + sum(DSR_cost) + sum(transport_cost) + sum(DSR_shed_cost))
+end
+
+function fix_soc_decisions(m::Model,soc_given,production_given,timesteps,country)
+    countries = filter!(e->e !=country,m.ext[:sets][:countries] )
+    soc_technologies = m.ext[:sets][:soc_technologies]
+    soc = m.ext[:variables][:soc]
+    production = m.ext[:variables][:production]
+    m.ext[:constraints][:soc_fixed] = @constraint(m,[c = countries, tech = soc_technologies[c] ,time = timesteps],
+        soc[c,tech,time] == soc_given[c,tech,time]
+    )
+    m.ext[:constraints][:soc_production_fixe] = @constraint(m,[c = countries, tech = soc_technologies[c] ,time = timesteps],
+        production[c,tech,time] == production_given[c,tech,time]
+    )
+end
+
+function fix_DSR_decisions(m::Model,DSR_up_given,DSR_down_given,timesteps,country)
+    countries = filter!(e->e !=country,m.ext[:sets][:countries] )
+    DSR_up = m.ext[:variables][:DSR_up]
+    DSR_down = m.ext[:variables][:DSR_down]
+    dsr_horizons = m.ext[:parameters][:DSR][:horizons]
+    m.ext[:constraints][:DSR_up_fixed] = @constraint(m,[c = countries,time = timesteps],
+        DSR_up[c,time] == DSR_up_given[c,time]
+    )
+    m.ext[:constraints][:DSR_down_fixed] = @constraint(m,[c = countries ,time = timesteps,t_from = time-dsr_horizons[c]:time+dsr_horizons[c]],
+        DSR_down[c,time,t_from] == DSR_down_given[c,time,t_from]
+    )
 end
