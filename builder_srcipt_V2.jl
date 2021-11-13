@@ -2,8 +2,8 @@ include("model_builder.jl")
 using Gurobi
 using Plots
 
-scenario = "Distributed Energy"
-endtime = 24*10
+scenario = "Global Ambition"
+endtime = 24*20
 year = 2040
 CY = 1984
 VOLL = 1000
@@ -15,10 +15,10 @@ process_parameters!(m,scenario,year,CY)
 process_time_series!(m,scenario)
 # remove_capacity_country(m,"BE00")
 # set_demand_country(m,"BE00",1000)
-#build_isolated_model_2!(m,endtime,VOLL,CO2_price)
+build_isolated_model_2!(m,endtime,VOLL,CO2_price)
 #build_isolated_model_DSR_shift!(m,endtime,VOLL,CO2_price,VOLL/20)
 #build_NTC_model!(m,endtime,VOLL,CO2_price)
-build_NTC_model_DSR_shift!(m,endtime,VOLL,CO2_price,VOLL/10,0.25,VOLL/2)
+#build_NTC_model_DSR_shift!(m,endtime,VOLL,CO2_price,VOLL/10,0.25,VOLL/2)
 optimize!(m)
 
 country = "BE00"
@@ -27,7 +27,7 @@ plot!([JuMP.dual.(m.ext[:constraints][:demand_met][country,t]) for t in 1:endtim
 plot!(twinx(),[-sum(JuMP.value(m.ext[:variables][:production][country,tech,t]) for tech in m.ext[:sets][:intermittent_technologies][country]) + m.ext[:timeseries][:demand][country][t] for t in 1:endtime],
     color = "red",label = "residual_demand", legend = :bottomright)
 
-t=20
+t=200
 
 sum(JuMP.value.(m.ext[:variables][:import][country,neighbor,t] for neighbor in m.ext[:sets][:connections][country]))
 sum(JuMP.value.(m.ext[:variables][:export][country,neighbor,t] for neighbor in m.ext[:sets][:connections][country]))
@@ -36,6 +36,7 @@ JuMP.dual.(m.ext[:constraints][:demand_met][country,t] for t in 1:endtime)
 sum(JuMP.value.(m.ext[:variables][:DSR_down]))
 sum(JuMP.value.(m.ext[:variables][:DSR_up]))
 sum(JuMP.value.(m.ext[:variables][:DSR_shed]))
+JuMP.value(m.ext[:objective])/sum(JuMP.value.(m.ext[:variables][:production]))
 
 sum(JuMP.value.(m.ext[:variables][:load_shedding]))/sum(JuMP.value.(m.ext[:variables][:production]))
 sum(JuMP.value.(m.ext[:variables][:load_shedding]["BE00",t]) for t in 1:endtime)/sum(JuMP.value.(m.ext[:timeseries][:demand]["BE00"][t]) for t in 1:endtime)

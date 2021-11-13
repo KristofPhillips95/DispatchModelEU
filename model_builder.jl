@@ -118,8 +118,8 @@ function process_parameters!(m::Model,scenario::String,year::Int,CY::Int)
     process_line_capacities!(m,scenario,year,CY,countries)
     process_hydro_energy_capacities!(m,countries)
     process_battery_energy_capacities!(m,countries)
-    process_DSR_capacities(m,countries)
-    process_flat_generation(m,countries)
+    process_DSR_capacities(m,countries,scenario)
+    process_flat_generation(m,countries,scenario)
 end
 
 function process_power_generation_parameters!(m::Model,scenario::String,year::Int,CY::Int,countries,technologies)
@@ -234,7 +234,7 @@ function process_battery_energy_capacities!(m,countries)
     end
 end
 
-function process_DSR_capacities(m,countries)
+function process_DSR_capacities(m,countries,scenario)
     reading = CSV.read("Input Data\\gen_cap.csv",DataFrame)
     reading = reading[reading[!,"Scenario"] .== scenario,:]
     reading = reading[reading[!,"Year"] .== year,:]
@@ -254,7 +254,7 @@ function process_DSR_capacities(m,countries)
     end
 end
 
-function process_flat_generation(m,countries)
+function process_flat_generation(m,countries,scenario)
     reading = CSV.read("Input Data\\gen_prod.csv",DataFrame)
     reading = reading[reading[!,"Scenario"] .== scenario,:]
     reading = reading[reading[!,"Year"] .== year,:]
@@ -770,9 +770,18 @@ function build_NTC_model_DSR_shift!(m:: Model,endtime,VOLL,CO2_price,DSR_shift_p
     sum(DSR_down[c,shift_to,shift_from] for shift_to in shift_from-dsr_horizons[c]:shift_from+dsr_horizons[c] if (1<=shift_to<=endtime)) == DSR_up[c,shift_from] )
 
     # Demand met for all timesteps
-    m.ext[:constraints][:demand_met] = @constraint(m,[c = countries, time = timesteps],
-        total_production_timestep[c,time] + load_shedding[c,time] + DSR_shed[c,time]  - curtailment[c,time] + sum(el_import[c,nb,time] for nb in connections[c])
-        == demand[c][time] + sum(el_export[c,nb,time] for nb in connections[c]) + DSR_up[c,time] - sum(DSR_down[c,time,shift_from] for shift_from in time-dsr_horizons[c]:time+dsr_horizons[c] if (1<=shift_from<=endtime))  + sum(charge[c,tech,time] for tech in storage_technologies[c])
+    m.ext[:constraints][:demand_met] = @constraint(m,demand_met[c = countries, time = timesteps],
+        total_production_timestep[c,time]
+        + load_shedding[c,time]
+        + DSR_shed[c,time]
+        - curtailment[c,time]
+        + sum(el_import[c,nb,time] for nb in connections[c])
+        - demand[c][time]
+        - sum(el_export[c,nb,time] for nb in connections[c])
+        - DSR_up[c,time]
+        + sum(DSR_down[c,time,shift_from] for shift_from in time-dsr_horizons[c]:time+dsr_horizons[c] if (1<=shift_from<=endtime))
+        - sum(charge[c,tech,time] for tech in storage_technologies[c])
+        == 0
     )
 
     VOM_cost = m.ext[:expressions][:VOM_cost]
