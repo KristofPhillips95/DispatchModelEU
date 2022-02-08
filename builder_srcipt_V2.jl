@@ -2,11 +2,11 @@ include("model_builder.jl")
 using Gurobi
 using Plots
 
-scenario = "Global Ambition"
-endtime = 24*20
+scenario = "Distributed Energy"
+endtime = 24*365
 year = 2040
 CY = 1984
-VOLL = 1000
+VOLL = 10000
 CO2_price = 0.085
 
 m = Model(optimizer_with_attributes(Gurobi.Optimizer))
@@ -15,12 +15,13 @@ process_parameters!(m,scenario,year,CY)
 process_time_series!(m,scenario)
 # remove_capacity_country(m,"BE00")
 # set_demand_country(m,"BE00",1000)
-build_isolated_model_2!(m,endtime,VOLL,CO2_price)
+#build_isolated_model_2!(m,endtime,VOLL,CO2_price)
 #build_isolated_model_DSR_shift!(m,endtime,VOLL,CO2_price,VOLL/20)
-#build_NTC_model!(m,endtime,VOLL,CO2_price)
+build_NTC_model!(m,endtime,VOLL,CO2_price)
 #build_NTC_model_DSR_shift!(m,endtime,VOLL,CO2_price,VOLL/10,0.25,VOLL/2)
 optimize!(m)
 
+JuMP.dual.(m.ext[:constraints][:demand_met])
 country = "BE00"
 plot([JuMP.dual.(m.ext[:constraints][:demand_met][country,t]) for t in 1:endtime],right_margin = 18Plots.mm,label = "Price")
 plot!([JuMP.dual.(m.ext[:constraints][:demand_met][country,t]) for t in 1:endtime],right_margin = 18Plots.mm,label = "Price")
@@ -47,7 +48,8 @@ ls_neighbors_NTC_percent = Dict(country =>
 
 
 sum(JuMP.value.(m.ext[:variables][:production]))
-sum(JuMP.value.(m.ext[:timeseries][:demand][country][ts]) for country in m.ext[:sets][:countries], ts in 1:endtime)
+
+maximum([sum(JuMP.value.(m.ext[:timeseries][:demand][country][ts]) for country in m.ext[:sets][:countries]) for ts in 1:endtime])
 
 country = "DE00"
 

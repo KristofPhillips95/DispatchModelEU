@@ -2,26 +2,26 @@ include("model_builder.jl")
 
 using Gurobi
 using TickTock
-
-function create_isolated_model(m::Model,scenario::String,year::Int,CY::Int,endtime,VOLL,CO2_price)
-    define_sets!(m,scenario,year,CY)
-    process_parameters!(m,scenario,year,CY)
-    process_time_series!(m,scenario)
-    build_isolated_model_2!(m,endtime,VOLL,CO2_price)
-end
-
-function create_isolated_model_DSR(m::Model,scenario::String,year::Int,CY::Int,endtime,VOLL,CO2_price,dsr_price)
-    define_sets!(m,scenario,year,CY)
-    process_parameters!(m,scenario,year,CY)
-    process_time_series!(m,scenario)
-    build_isolated_model_DSR!(m,endtime,VOLL,CO2_price,dsr_price)
-end
-function create_NTC_model(m::Model,scenario::String,year::Int,CY::Int,endtime,VOLL,CO2_price)
-    define_sets!(m,scenario,year,CY)
-    process_parameters!(m,scenario,year,CY)
-    process_time_series!(m,scenario)
-    build_NTC_model!(m,endtime,VOLL,CO2_price)
-end
+using Statistics
+# function create_isolated_model(m::Model,scenario::String,year::Int,CY::Int,endtime,VOLL,CO2_price)
+#     define_sets!(m,scenario,year,CY)
+#     process_parameters!(m,scenario,year,CY)
+#     process_time_series!(m,scenario)
+#     build_isolated_model_2!(m,endtime,VOLL,CO2_price)
+# end
+#
+# function create_isolated_model_DSR(m::Model,scenario::String,year::Int,CY::Int,endtime,VOLL,CO2_price,dsr_price)
+#     define_sets!(m,scenario,year,CY)
+#     process_parameters!(m,scenario,year,CY)
+#     process_time_series!(m,scenario)
+#     build_isolated_model_DSR!(m,endtime,VOLL,CO2_price,dsr_price)
+# end
+# function create_NTC_model(m::Model,scenario::String,year::Int,CY::Int,endtime,VOLL,CO2_price)
+#     define_sets!(m,scenario,year,CY)
+#     process_parameters!(m,scenario,year,CY)
+#     process_time_series!(m,scenario)
+#     build_NTC_model!(m,endtime,VOLL,CO2_price)
+# end
 function create_NTC_model_DSR(m::Model,scenario::String,year::Int,CY::Int,endtime,VOLL,CO2_price,dsr_price)
     define_sets!(m,scenario,year,CY)
     process_parameters!(m,scenario,year,CY)
@@ -30,21 +30,21 @@ function create_NTC_model_DSR(m::Model,scenario::String,year::Int,CY::Int,endtim
 end
 # using JLD2
 # using FileIO
-# using JLD
-# using HDF5
-# save("example.jld2",values_kept)
+using JLD
+using HDF5
+save("example.jld2",values_kept)
+CSV.write("values_kept_DE_2.csv",values_kept)
 # JLD.save("example.jld",,values_kept)
 ##
-using Gurobi
 
 values_kept = Dict()
-endtime = 24*10
+endtime = 24*100
 year = 2040
 CY = 1984
-VOLL = 1000
-CO2_price = 0.84
-dsr_price = 200
-scenarios = ["Distributed Energy" "Global Ambition" "National Trends"]
+VOLL = 5000
+CO2_price = 0.085
+dsr_price = VOLL/10
+scenarios = ["Distributed Energy" "National Trends" "Global Ambition"]
 values_kept = Dict()
 values_kept[:t_build] = Dict()
 values_kept[:t_solve] = Dict()
@@ -62,6 +62,10 @@ values_kept[:neighbors_load_shedding][:absolute]  = Dict()
 values_kept[:neighbors_load_shedding][:percentage]  = Dict()
 values_kept[:net_import] = Dict()
 values_kept[:demand] = Dict()
+values_kept[:nodal_prices] = Dict()
+values_kept[:ires_gen] = Dict()
+values_kept[:DSR_shed] = Dict()
+values_kept[:DSR_up] = Dict()
 dsr = "DSR"
 
 values_kept[:t_build][dsr] = Dict()
@@ -80,63 +84,36 @@ values_kept[:neighbors_load_shedding][:absolute][dsr]  = Dict()
 values_kept[:neighbors_load_shedding][:percentage][dsr]  = Dict()
 values_kept[:net_import][dsr] = Dict()
 values_kept[:demand][dsr] = Dict()
+values_kept[:nodal_prices][dsr] = Dict()
+values_kept[:ires_gen][dsr] = Dict()
+values_kept[:DSR_shed][dsr] = Dict()
+values_kept[:DSR_up][dsr] = Dict()
 for scenario in scenarios
-    @show(scenario)
-    tick()
-    m1 = Model(optimizer_with_attributes(Gurobi.Optimizer))
-    if dsr == "No_DSR"
-#        create_isolated_model(m1,scenario,year,CY,endtime,VOLL,CO2_price)
-    elseif dsr == "DSR"
-        create_isolated_model_DSR(m1,scenario,year,CY,endtime,VOLL,CO2_price,dsr_price)
-    else
-            @show("Problem!!!!!!!!!!!")
-    end
-    t_build_isolated = tok()
-    tick()
-    println("solving Isolated")
-    optimize!(m1)
-    t_solve_isolated = tok()
-
-    # build_isolated_model!(m,endtime,1000,0.84)
-        # optimize!(m)
     tick()
     m2 = Model(optimizer_with_attributes(Gurobi.Optimizer))
-    if dsr == "No_DSR"
-            create_NTC_model(m2,scenario,year,CY,endtime,VOLL,CO2_price)
-    elseif dsr == "DSR"
-            create_NTC_model_DSR(m2,scenario,year,CY,endtime,VOLL,CO2_price,dsr_price)
-    else
-            @show("Problem!!!!!!!!!!!")
-    end
+
+    create_NTC_model_DSR(m2,scenario,year,CY,endtime,VOLL,CO2_price,dsr_price)
 
     t_build_NTC = tok()
     tick()
     optimize!(m2)
     t_solve_NTC = tok()
-    t_build_scen = Dict("isolated" => t_build_isolated, "NTC" => t_build_NTC)
+    t_build_scen = Dict("NTC" => t_build_NTC)
     values_kept[:t_build][dsr][scenario] = t_build_scen
 
-    t_solve_scen = Dict("isolated" => t_solve_isolated, "NTC" => t_solve_NTC)
+    t_solve_scen = Dict( "NTC" => t_solve_NTC)
     values_kept[:t_solve][dsr][scenario] = t_solve_scen
-    values_kept[:costs][:total][dsr][scenario] = Dict("isolated" => JuMP.objective_value.(m1), "NTC" => JuMP.objective_value.(m2))
-    values_kept[:costs][:VOM_cost][dsr][scenario] = Dict("isolated" =>sum(JuMP.value.(m1.ext[:expressions][:VOM_cost])), "NTC" => sum(JuMP.value.(m2.ext[:expressions][:VOM_cost])))
-    values_kept[:costs][:fuel_cost][dsr][scenario] = Dict("isolated" =>sum(JuMP.value.(m1.ext[:expressions][:fuel_cost])), "NTC" => sum(JuMP.value.(m2.ext[:expressions][:fuel_cost])))
-    values_kept[:costs][:CO2_cost][dsr][scenario] = Dict("isolated" =>sum(JuMP.value.(m1.ext[:expressions][:CO2_cost])), "NTC" => sum(JuMP.value.(m2.ext[:expressions][:CO2_cost])))
-    values_kept[:costs][:load_shedding_cost][dsr][scenario] = Dict("isolated" =>sum(JuMP.value.(m1.ext[:expressions][:load_shedding_cost])), "NTC" => sum(JuMP.value.(m2.ext[:expressions][:load_shedding_cost])))
+    values_kept[:costs][:total][dsr][scenario] = Dict( "NTC" => JuMP.objective_value.(m2))
+    values_kept[:costs][:VOM_cost][dsr][scenario] = Dict( "NTC" => sum(JuMP.value.(m2.ext[:expressions][:VOM_cost])))
+    values_kept[:costs][:fuel_cost][dsr][scenario] = Dict( "NTC" => sum(JuMP.value.(m2.ext[:expressions][:fuel_cost])))
+    values_kept[:costs][:CO2_cost][dsr][scenario] = Dict( "NTC" => sum(JuMP.value.(m2.ext[:expressions][:CO2_cost])))
+    values_kept[:costs][:load_shedding_cost][dsr][scenario] = Dict( "NTC" => sum(JuMP.value.(m2.ext[:expressions][:load_shedding_cost])))
 
 
-    load_shedding_isolated = sum(JuMP.value.(m1.ext[:variables][:load_shedding]))
     load_shedding_NTC = sum(JuMP.value.(m2.ext[:variables][:load_shedding]))
 
 
 
-    ls_neighbors_isolated_percent = Dict(country =>
-            sum(JuMP.value.(m1.ext[:variables][:load_shedding][country,ts]) for ts in 1:endtime)
-            /sum(m1.ext[:timeseries][:demand][country][ts]
-            for ts in 1:endtime) for country in m1.ext[:sets][:connections]["BE00"])
-    ls_neighbors_isolated_abs = Dict(country =>
-            sum(JuMP.value.(m1.ext[:variables][:load_shedding][country,ts]) for ts in 1:endtime)
-            for country in m1.ext[:sets][:connections]["BE00"])
     ls_neighbors_NTC_percent = Dict(country =>
             sum(JuMP.value.(m2.ext[:variables][:load_shedding][country,ts]) for ts in 1:endtime)
             /sum(m2.ext[:timeseries][:demand][country][ts]
@@ -145,17 +122,10 @@ for scenario in scenarios
             sum(JuMP.value.(m2.ext[:variables][:load_shedding][country,ts]) for ts in 1:endtime)
             for country in m2.ext[:sets][:connections]["BE00"])
 
-    values_kept[:neighbors_load_shedding][:absolute][dsr][scenario] = Dict("isolated" => ls_neighbors_isolated_abs, "NTC" => ls_neighbors_NTC_abs )
-    values_kept[:neighbors_load_shedding][:percentage][dsr][scenario] = Dict("isolated" => ls_neighbors_isolated_percent, "NTC" => ls_neighbors_NTC_percent)
+    values_kept[:neighbors_load_shedding][:absolute][dsr][scenario] = Dict( "NTC" => ls_neighbors_NTC_abs )
+    values_kept[:neighbors_load_shedding][:percentage][dsr][scenario] = Dict( "NTC" => ls_neighbors_NTC_percent)
 
 
-    ls_isolated_percent = Dict(country =>
-            sum(JuMP.value.(m1.ext[:variables][:load_shedding][country,ts]) for ts in 1:endtime)
-            /sum(m1.ext[:timeseries][:demand][country][ts]
-            for ts in 1:endtime) for country in m1.ext[:sets][:countries])
-    ls_isolated_abs = Dict(country =>
-            sum(JuMP.value.(m1.ext[:variables][:load_shedding][country,ts]) for ts in 1:endtime)
-            for country in m1.ext[:sets][:countries])
     ls_NTC_percent = Dict(country =>
             sum(JuMP.value.(m2.ext[:variables][:load_shedding][country,ts]) for ts in 1:endtime)
             /sum(m2.ext[:timeseries][:demand][country][ts]
@@ -164,8 +134,8 @@ for scenario in scenarios
             sum(JuMP.value.(m2.ext[:variables][:load_shedding][country,ts]) for ts in 1:endtime)
             for country in m2.ext[:sets][:countries])
 
-    values_kept[:load_shedding][:absolute][dsr][scenario] = Dict("isolated" => ls_isolated_abs, "NTC" => ls_NTC_abs )
-    values_kept[:load_shedding][:percentage][dsr][scenario] = Dict("isolated" => ls_isolated_percent, "NTC" => ls_NTC_percent)
+    values_kept[:load_shedding][:absolute][dsr][scenario] = Dict( "NTC" => ls_NTC_abs )
+    values_kept[:load_shedding][:percentage][dsr][scenario] = Dict( "NTC" => ls_NTC_percent)
 
     net_import = Dict(country =>
             sum(JuMP.value.(m2.ext[:variables][:import][country,neighbor,ts]) - JuMP.value.(m2.ext[:variables][:export][country,neighbor,ts])  for ts in 1:endtime,neighbor in m2.ext[:sets][:connections][country])
@@ -176,19 +146,37 @@ for scenario in scenarios
             sum(JuMP.value.(m2.ext[:timeseries][:demand][country][ts])  for ts in 1:endtime)
             for country in m2.ext[:sets][:countries])
                 values_kept[:demand][dsr][scenario] = demand
+
+    nodal_prices = JuMP.dual.(m2.ext[:constraints][:demand_met])
+    values_kept[:nodal_prices][dsr][scenario] = nodal_prices
+
+    countries = ["BE00" "DE00" "FR00" "UK00" "NL00"]
+
+    ires_gen = Dict( country =>
+        sum(JuMP.value(m2.ext[:variables][:production][country,tech,t])
+            for tech in m2.ext[:sets][:intermittent_technologies][country], t in 1:endtime) for country in countries)
+            values_kept[:ires_gen][dsr][scenario] = ires_gen
+    DSR_shed = Dict( country =>
+        sum(JuMP.value(m2.ext[:variables][:DSR_shed][country,t])
+            for t in 1:endtime) for country in countries)
+            values_kept[:DSR_shed][dsr][scenario] = DSR_shed
+
+    DSR_up = Dict( country =>
+        sum(JuMP.value(m2.ext[:variables][:DSR_up][country,t])
+            for t in 1:endtime) for country in countries)
+            values_kept[:DSR_up][dsr][scenario] = DSR_up
 end
+
 scen = "Distributed Energy"
 dsr = "DSR"
 
 ls = sum(values_kept[:load_shedding][:absolute][dsr][scen]["NTC"][country] for country in keys(values_kept[:load_shedding][:absolute][dsr][scen]["NTC"]))
-ls = sum(values_kept[:load_shedding][:absolute][dsr][scen]["isolated"][country] for country in keys(values_kept[:load_shedding][:absolute][dsr][scen]["NTC"]))
 
 dem = sum(values_kept[:demand][dsr][scen][country] for country in keys(values_kept[:load_shedding][:absolute][dsr][scen]["NTC"]))
 
 ls/dem
 
 ls =sum(values_kept[:neighbors_load_shedding][:absolute][dsr][scen]["NTC"][country] for country in keys(values_kept[:neighbors_load_shedding][:absolute][dsr][scen]["NTC"]))
-ls = sum(values_kept[:neighbors_load_shedding][:absolute][dsr][scen]["isolated"][country] for country in keys(values_kept[:neighbors_load_shedding][:absolute][dsr][scen]["NTC"]))
 
 dem = sum(values_kept[:demand][dsr][scen][country] for country in keys(values_kept[:neighbors_load_shedding][:absolute][dsr][scen]["NTC"]))
 
@@ -198,17 +186,35 @@ dem = values_kept[:demand][dsr][scen]["BE00"]
 
 net_import/dem
 
-total_cost = values_kept[:costs][:total][dsr][scen]["isolated"]
-ls_cost = values_kept[:costs][:load_shedding_cost][dsr][scen]["isolated"]
-dem = sum(values_kept[:demand][dsr][scen][country] for country in keys(values_kept[:load_shedding][:absolute][dsr][scen]["NTC"]))
-total_cost/dem
 
+co2_cost = values_kept[:costs][:CO2_cost][dsr][scen]["NTC"]/0.085/1000000000
+values_kept[:costs][:CO2_cost][dsr][scen]["NTC"]
 
 total_cost = values_kept[:costs][:total][dsr][scen]["NTC"]
 ls_cost = values_kept[:costs][:load_shedding_cost][dsr][scen]["NTC"]
 dem = sum(values_kept[:demand][dsr][scen][country] for country in keys(values_kept[:load_shedding][:absolute][dsr][scen]["NTC"]))
 total_cost/dem
+mean(nodal_prices)
+nodal_prices = values_kept[:nodal_prices][dsr][scen]
+neighbors = keys(values_kept[:neighbors_load_shedding][:absolute]["DSR"][scen]["NTC"])
+nodal_price_nb = [nodal_prices[country,ts] for country in neighbors, ts in 1:endtime]
+maximum(nodal_price_nb)
+avg_nodal_price = mean(nodal_price_nb)
+countries = ["BE00" "DE00" "FR00" "UK00" "NL00"]
 
+ires_gen = [values_kept[:ires_gen][dsr][scen][c] for c in countries]
+dem_ires_c = [values_kept[:demand][dsr][scen][c] for c in countries]
+
+sum(ires_gen)/sum(dem_ires_c)
+
+DSR_shed = [values_kept[:DSR_shed][dsr][scen][c] for c in countries]
+sum(DSR_shed)/sum(dem_ires_c)
+
+DSR_up = [values_kept[:DSR_up][dsr][scen][c] for c in countries]
+sum(DSR_up)/sum(dem_ires_c)
+
+##
+values_kept_DE = CSV.read("values_kept.csv",Dict)
 
 
 ##

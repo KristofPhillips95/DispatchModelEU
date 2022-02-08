@@ -249,7 +249,7 @@ function process_DSR_capacities(m,countries,scenario)
             m.ext[:parameters][:DSR][:capacities][country] = 0
             m.ext[:parameters][:DSR][:horizons][country] = 3
         else
-            @show("DSR capacity not uniqueliy defined for $country")
+            @show("DSR capacity not uniquely defined for $country")
         end
     end
 end
@@ -269,24 +269,39 @@ function process_flat_generation(m,countries,scenario)
     end
 end
 
-function process_time_series!(m::Model,scenario::String)
+function process_time_series!(m::Model,scenario::String,year,CY)
     countries = m.ext[:sets][:countries]
 
     m.ext[:timeseries] = Dict()
     m.ext[:timeseries][:demand] = Dict()
     m.ext[:timeseries][:inter_gen] = Dict()
 
-    process_demand_time_series!(m,scenario,countries)
-    process_intermittent_time_series!(m,countries)
-    process_hydro_inflow_time_series!(m,countries)
+    process_demand_time_series!(m,scenario,countries,year,CY)
+    process_intermittent_time_series!(m,countries,CY)
+    process_hydro_inflow_time_series!(m,countries,CY)
 end
 
-function process_demand_time_series!(m::Model, scenario::String,countries)
+function process_demand_time_series!(m::Model, scenario::String,countries,year)
     scenario_dict = Dict("Distributed Energy" => "DE","Global Ambition" => "GA","National Trends" => "NT")
     filename = string(scenario_dict[scenario],"2040_Demand_CY1984.csv")
     demand_reading = CSV.read(joinpath("Input Data",filename),DataFrame)
     for country in countries
         m.ext[:timeseries][:demand][country] = demand_reading[!,country]
+    end
+end
+
+function process_demand_time_series!(m::Model, scenario::String,countries,year,CY)
+    scenario_dict = Dict("Distributed Energy" => "DistributedEnergy","Global Ambition" => "GlobalAmbition","National Trends" => "NationalTrends")
+    filename = string("Demand_$(year)_$(scenario_dict[scenario])_$(CY).csv")
+    demand_reading = CSV.read(joinpath("Input Data","time_series_output",filename),DataFrame)
+    l = 8760
+    for country in countries
+        if !(country in(["DKKF" "LUV1" "DEKF"]))
+            m.ext[:timeseries][:demand][country] = demand_reading[!,country]
+            l = length(m.ext[:timeseries][:demand][country])
+        else
+            m.ext[:timeseries][:demand][country] = zeros(l)
+        end
     end
 end
 
@@ -312,6 +327,28 @@ function process_intermittent_time_series!(m::Model, countries)
     end
 end
 
+function process_intermittent_time_series!(m::Model, countries,CY)
+    for country in countries
+        if !(isempty(m.ext[:sets][:intermittent_technologies][country]))
+            m.ext[:timeseries][:inter_gen][country] = Dict(im_t => [] for im_t in m.ext[:sets][:intermittent_technologies][country])
+        end
+    end
+
+    im_techs = Dict("PV" => "pv","w_on" => "onshore","w_off" => "offshore")
+    for im_t in keys(im_techs)
+        # print(im_t)
+        tech_reading = CSV.read(joinpath("Input Data","time_series_output",string(im_techs[im_t],"_$CY",".csv")),DataFrame)
+        for country in countries
+            if country =="BE00"
+                print(keys(m.ext[:sets][:intermittent_technologies][country]))
+            end
+            if im_t in m.ext[:sets][:intermittent_technologies][country]
+                m.ext[:timeseries][:inter_gen][country][im_t] = tech_reading[!,country]
+            end
+        end
+    end
+end
+
 function process_hydro_inflow_time_series!(m::Model,countries)
     m.ext[:timeseries][:hydro_inflow] = Dict()
     for country in countries
@@ -323,6 +360,29 @@ function process_hydro_inflow_time_series!(m::Model,countries)
     for hydro_inflow_tech in keys(hydro_inflow_techs)
         #print(im_t)
         tech_reading = CSV.read(joinpath("Input Data","time_series_output",string(hydro_inflow_techs[hydro_inflow_tech],".csv")),DataFrame)
+        for country in countries
+            if hydro_inflow_tech in m.ext[:sets][:hydro_flow_technologies][country]
+                if country != "FR15"
+                    m.ext[:timeseries][:hydro_inflow][country][hydro_inflow_tech] = tech_reading[!,country]
+                else
+                    m.ext[:timeseries][:hydro_inflow][country][hydro_inflow_tech] = zeros(8760)
+                end
+            end
+        end
+    end
+end
+
+function process_hydro_inflow_time_series!(m::Model,countries,CY)
+    m.ext[:timeseries][:hydro_inflow] = Dict()
+    for country in countries
+        if !(isempty(m.ext[:sets][:hydro_flow_technologies][country]))
+            m.ext[:timeseries][:hydro_inflow][country] = Dict(hyd_t => [] for hyd_t in m.ext[:sets][:hydro_flow_technologies][country])
+        end
+    end
+    hydro_inflow_techs = Dict("PS_O" => "PS_O","ROR" => "ROR","RES" => "RES")
+    for hydro_inflow_tech in keys(hydro_inflow_techs)
+        #print(im_t)
+        tech_reading = CSV.read(joinpath("Input Data","time_series_output",string(hydro_inflow_techs[hydro_inflow_tech],"_$CY",".csv")),DataFrame)
         for country in countries
             if hydro_inflow_tech in m.ext[:sets][:hydro_flow_technologies][country]
                 if country != "FR15"
@@ -448,6 +508,7 @@ function build_base_model!(m::Model,endtime,VOLL,CO2_price)
     @expression(m, [c = countries, time = timesteps],
     load_shedding[c,time]*VOLL
     )
+
     #############
     #Constraints
     #############
@@ -460,7 +521,7 @@ function build_base_model!(m::Model,endtime,VOLL,CO2_price)
     )
     #Production must be positive and respect the installed capacity for all technologies
     m.ext[:constraints][:production_flat_runs] = @constraint(m,[c = countries, tech = flat_run_technologies[c],time = timesteps],
-    production[c,tech,time] ==  total_gen[c][tech]/8760*1000
+    production[c,tech,time] <=  total_gen[c][tech]/8760*1000
     )
     #Load shedding must at all times be positive
     m.ext[:constraints][:load_shedding_pos] = @constraint(m,[c = countries, tech = technologies[c],time = timesteps],
