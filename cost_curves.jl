@@ -37,22 +37,48 @@ using Plots
 # plot([sum(JuMP.value.(m.ext[:variables][:soc][country,tech,t] for tech in m.ext[:sets][:soc_technologies][country])) for t in 1:endtime])
 # plot!([sum(JuMP.value.(m2.ext[:variables][:soc][country,tech,t] for tech in m2.ext[:sets][:soc_technologies][country])) for t in 1:endtime])
 #
+# country = "DE00"
 # plot([sum(JuMP.value.(m.ext[:variables][:production][country,tech,t] for tech in m.ext[:sets][:soc_technologies][country])) for t in 1:endtime])
 # plot!([sum(JuMP.value.(m2.ext[:variables][:production][country,tech,t] for tech in m2.ext[:sets][:soc_technologies][country])) for t in 1:endtime])
-#
+
 # plot([sum(JuMP.value.(m.ext[:variables][:DSR_up][country,t] )) for t in 1:endtime])
 # plot!([sum(JuMP.value.(m2.ext[:variables][:DSR_up][country,t] )) for t in 1:endtime])
 # [sum(JuMP.value.(m.ext[:variables][:DSR_up][country,t] )) for t in 1:endtime] == [sum(JuMP.value.(m2.ext[:variables][:DSR_up][country,t] )) for t in 1:endtime]
 #
 # country = "BE00"
-# plot([JuMP.dual.(m.ext[:constraints][:demand_met][country,t]) for t in 1:endtime],right_margin = 18Plots.mm,label = "Price")
+# plot([JuMP.dual.(m.ext[:constraints][:demand_met][country,t]) for t in 1:endtime],right_margin = 18Plots.mm,label = "Price_ original")
 # plot!([JuMP.dual.(m2.ext[:constraints][:demand_met][country,t]) for t in 1:endtime],right_margin = 18Plots.mm,label = "Price")
-#
+
 # JuMP.value.(m.ext[:variables][:production]["BE"])
 # [sum(JuMP.value.(m2.ext[:variables][:import][country,nb,t] ) for nb in m.ext[:sets][:connections][country]) for t in 1:endtime]
 # - [sum(JuMP.value.(m2.ext[:variables][:export][country,nb,t] ) for nb in m.ext[:sets][:connections][country]) for t in 1:endtime]
 ##
-function optimize_and_retain_intertemporal_decisions(scenario::String,year::Int,CY::Int,endtime,VOLL,CO2_price,sheddable_fraction)
+function check_equal_soc_for_all_but(m1,m2,country,endtime)
+    countries = filter(e->e !=country,m1.ext[:sets][:countries])
+    soc_technologies = m1.ext[:sets][:soc_technologies]
+    for country in countries
+        # print(country)
+        for tech in m1.ext[:sets][:soc_technologies][country]
+            soc_1 = [JuMP.value.(m1.ext[:variables][:soc][country,tech,t]) for t in 1:endtime]
+            soc_2 = [JuMP.value.(m2.ext[:variables][:soc][country,tech,t]) for t in 1:endtime]
+            @assert(soc_1 == soc_2)
+
+            prod_soc_1  = [JuMP.value.(m1.ext[:variables][:production][country,tech,t]) for t in 1:endtime]
+            prod_soc_1  = [JuMP.value.(m2.ext[:variables][:production][country,tech,t]) for t in 1:endtime]
+            @assert(soc_1 == soc_2)
+
+        end
+    end
+end
+
+function check_net_import(m,country,import_level,endtime)
+    net_import = [sum(JuMP.value.(m.ext[:variables][:import][country,nb,t]) - JuMP.value.(m.ext[:variables][:export][country,nb,t]) for nb in m.ext[:sets][:connections][country]) for t in 1:endtime]
+    for t in 1:endtime
+        @assert( round(net_import[t],digits = 5)  == import_level)
+    end
+end
+
+function optimize_and_retain_intertemporal_decisions_DSR_shift(scenario::String,year::Int,CY::Int,endtime,VOLL,CO2_price,sheddable_fraction)
     m = Model(optimizer_with_attributes(Gurobi.Optimizer))
     define_sets!(m,scenario,year,CY)
     process_parameters!(m,scenario,year,CY)
@@ -67,20 +93,89 @@ function optimize_and_retain_intertemporal_decisions(scenario::String,year::Int,
     return m,soc,production,DSR_up,DSR_down
 end
 
-function build_model_for_import_curve(m,import_level,country,scenario::String,year::Int,CY::Int,endtime,VOLL,CO2_price,sheddable_fraction,soc,production,DSR_up,DSR_down)
+function optimize_and_retain_intertemporal_decisions_DSR_simple(scenario::String,year::Int,CY_cap::Int,CY_ts::Int,endtime::Int,VOLL::Int,DSR_price)
+    #TODO This has to be implemented for DSR without shifting
+    m = Model(optimizer_with_attributes(Gurobi.Optimizer))
+    define_sets!(m,scenario,year,CY_cap,[])
+    process_parameters!(m,scenario,year,CY_cap)
+    process_time_series!(m,scenario,year,CY_ts)
+    build_NTC_model_DSR!(m,endtime,VOLL,DSR_price,0.1)
+    optimize!(m)
+    soc = JuMP.value.(m.ext[:variables][:soc])
+    production = JuMP.value.(m.ext[:variables][:production])
+    return m, soc, production
+end
+
+function optimize_and_retain_intertemporal_decisions_no_DSR(scenario::String,year::Int,CY_cap::Int,CY_ts,endtime,VOLL)
+    m = Model(optimizer_with_attributes(Gurobi.Optimizer))
+    define_sets!(m,scenario,year,CY_cap,[])
+    process_parameters!(m,scenario,year,CY_cap)
+    process_time_series!(m,scenario,year,CY_ts)
+    build_NTC_model!(m,endtime,VOLL,0.1)
+    optimize!(m)
+    soc = JuMP.value.(m.ext[:variables][:soc])
+    production = JuMP.value.(m.ext[:variables][:production])
+
+    return m,soc,production
+end
+
+function write_sparse_axis_to_dict(sparse_axis)
+    dict =  Dict()
+    for key in eachindex(sparse_axis)
+        dict[key] = sparse_axis[key]
+    end
+    return dict
+end
+
+function build_model_for_import_curve_DSR_simple(m,import_level,country,endtime,soc,production,VOLL,DSR_price)
     # define_sets!(m,scenario,year,CY)
     # process_parameters!(m,scenario,year,CY)
     # process_time_series!(m,scenario)
     remove_capacity_country(m,country)
     set_demand_country(m,country,import_level)
+    build_NTC_model_DSR!(m,endtime,VOLL,DSR_price,0)
     fix_soc_decisions(m,soc,production,1:endtime,country)
-    fix_DSR_decisions(m,DSR_up,DSR_down,1:endtime,country)
+    optimize!(m)
+    return m
+end
+
+function build_model_for_import_curve_no_DSR_from_dict(import_level,country,endtime,soc,production,transp_cost)
+    m = Model(optimizer_with_attributes(Gurobi.Optimizer))
+    define_sets!(m,scenario,year,CY_cap,[])
+    process_parameters!(m,scenario,year,CY_cap)
+    process_time_series!(m,scenario,year,CY_ts)
+    remove_capacity_country(m,country)
+    set_demand_country(m,country,import_level)
+    build_NTC_model!(m,endtime,VOLL,transp_cost)
+    fix_soc_decisions_from_dict(m,soc,production,1:endtime,country)
+    #optimize!(m)
+    return m
+end
+
+function build_model_for_import_curve_no_DSR(m,import_level,country,endtime,soc,production,transp_cost)
+    # define_sets!(m,scenario,year,CY)
+    # process_parameters!(m,scenario,year,CY)
+    # process_time_series!(m,scenario)
+    remove_capacity_country(m,country)
+    set_demand_country(m,country,import_level)
+    build_NTC_model!(m,endtime,VOLL,transp_cost)
+    fix_soc_decisions(m,soc,production,1:endtime,country)
+    #optimize!(m)
+    return m
+end
+
+function change_import_level!(m,endtime,import_level)
     for t in 1:endtime
         set_normalized_rhs(m.ext[:constraints][:demand_met][country,t],import_level)
     end
-    #build_NTC_model_DSR_shift!(m2,endtime,VOLL,CO2_price,VOLL/10,sheddable_fraction,VOLL/2)
-    optimize!(m)
-    return m
+end
+
+function check_production_zero!(m,country,endtime)
+    for t in 1:endtime
+        for tech in m.ext[:sets][:technologies][country]
+            @assert(JuMP.value.(m.ext[:variables][:production][country,tech,t]) == 0)
+        end
+    end
 end
 
 function check_convexitiy_of_prices(curve_dict, import_levels)
@@ -104,103 +199,14 @@ function price_duration_curve(prices)
     return price_count_dict
 end
 
-function write_prices(curve_dict,scenario,import_levels)
+function write_prices(curve_dict,scenario,import_levels,file_name_ext)
     df_prices = DataFrame()
 
     for price in import_levels
         insertcols!(df_prices,1,string(price) => curve_dict[price])
     end
-    CSV.write("Results\\import_price_curves$(scenario)_364.csv",df_prices)
+    CSV.write("Results\\import_price_curves$(scenario)_$(file_name_ext).csv",df_prices)
 end
 ##
 
 #Start by performing overall optimization
-
-endtime = 24*1
-year = 2040
-CY = 1984
-VOLL = 1000
-CO2_price = 0.085
-sheddable_fraction = 0.25
-country = "BE00"
-curve_dict = Dict()
-import_dict = Dict()
-export_dict = Dict()
-
-scenario = "Distributed Energy"
-import_levels = -5000:100:5000
-
-scenarios = ["Distributed Energy" "Global Ambition" "National Trends"]
-
-for scenario in scenarios
-    m, soc, production, DSR_up, DSR_down = optimize_and_retain_intertemporal_decisions(scenario::String,year::Int,CY::Int,endtime,VOLL,CO2_price,sheddable_fraction)
-    m = build_model_for_import_curve(m,0,country,scenario,year,CY,endtime,VOLL,CO2_price,sheddable_fraction,soc,production,DSR_up,DSR_down)
-
-    for import_level in import_levels
-        for t in 1:endtime
-            set_normalized_rhs(m.ext[:constraints][:demand_met][country,t],import_level)
-        end
-        optimize!(m)
-        try
-            import_prices = [JuMP.dual.(m.ext[:constraints][:demand_met][country,t]) for t in 1:endtime]
-            curve_dict[import_level] = import_prices
-
-            import_dict[import_level] = [sum(JuMP.value.(m.ext[:variables][:import][country,nb,t]) for nb in m.ext[:sets][:connections][country]) for t in 1:endtime]
-            export_dict[import_level] = [sum(JuMP.value.(m.ext[:variables][:export][country,nb,t]) for nb in m.ext[:sets][:connections][country]) for t in 1:endtime]
-        catch
-            import_prices = [NaN for t in 1:endtime]
-            curve_dict[import_level] = import_prices
-            import_dict[import_level] = [NaN for t in 1:endtime]
-            export_dict[import_level] = [NaN for t in 1:endtime]
-        end
-
-    end
-
-    write_prices(curve_dict,scenario,import_levels)
-end
-
-
-
-m, soc, production, DSR_up, DSR_down = optimize_and_retain_intertemporal_decisions(scenario::String,year::Int,CY::Int,endtime,VOLL,CO2_price,sheddable_fraction)
-m = build_model_for_import_curve(m,5000,country,scenario,year,CY,endtime,VOLL,CO2_price,sheddable_fraction,soc,production,DSR_up,DSR_down)
-
-optimize!(m)
-[JuMP.dual.(m.ext[:constraints][:demand_met][country,t]) for t in 1:endtime]
-
-m.ext[:constraints][:demand_met]["BE00",1]
-
-plot()
-for import_level in import_levels
-    plot!(curve_dict[import_level],label = import_level)
-end
-plot!()
-
-check_convexitiy_of_prices(curve_dict,import_levels)
-
-
-
-
-##
-collect(import_levels)
-t=750
-pd[500]
-pd = Dict( import_level => curve_dict[import_level][t] for import_level in import_levels)
-scatter(pd)
-
-scatter(price_duration_curve(curve_dict[1500]))
-price_duration_curve(curve_dict[1500])
-histogram(curve_dict[500],bins = 500)
-histogram(curve_dict[1500],bins = 500)
-histogram(curve_dict[2500],bins = 500)
-histogram(curve_dict[3500],bins = 500)
-
-##
-import_level = 5000
-import_dict[import_level] - export_dict[import_level]
-##
-m.hext[:variables]
-sum(JuMP.value.(m.ext[:variables][:DSR_up]))
-sum(JuMP.value.(m.ext[:variables][:DSR_down]))
-sum(JuMP.value.(m.ext[:variables][:DSR_shed]))
-sum(JuMP.value.(m.ext[:variables][:load_shedding]))/
-    sum(JuMP.value.(m.ext[:variables][:production]))

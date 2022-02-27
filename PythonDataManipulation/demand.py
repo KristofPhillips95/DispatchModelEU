@@ -1,12 +1,12 @@
 import pandas as pd
 
 scenario = "DistributedEnergy"
-year = 2040
-CY = 1984
+year = 2030
+CY = 2012
 df_demand = pd.DataFrame()
 
 #xls_dem = pd.ExcelFile(io = f"../Input Data/Demand_time_series/Demand_TimeSeries_{year}_{scenario}.xlsx",engine = 'openpyxl')
-xls_dem = pd.ExcelFile(io = f"../Input Data/Demand_time_series/WeTransfer Dante load 14.10.2020/Demand_TimeSeries_{year}_{scenario} (Complete 15-08-2019).xlsx",engine = 'openpyxl')
+xls_dem = pd.ExcelFile(f"../Input Data/Demand_time_series/WeTransfer Dante load 14.10.2020/Demand_TimeSeries_{year}_{scenario} (Complete 15-08-2019).xlsx",engine = 'openpyxl')
 counter = 0
 for sheet_name in xls_dem.sheet_names:
     print(counter)

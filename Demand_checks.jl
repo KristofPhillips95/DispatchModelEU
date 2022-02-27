@@ -1,6 +1,7 @@
 include("model_builder.jl")
 using Gurobi
 using Plots
+using Revise
 
 peak_demand = Dict()
 total_demand = Dict()
@@ -8,22 +9,23 @@ total_demand = Dict()
 scenario = "Distributed Energy"
 #scenario = "Global Ambition"
 #scenario = "National Trends"
-endtime = 24*365
-year = 2040
-CY = 1984
+endtime = 24*100
+year = 2030
+CY_cap = 1984
+CY_ts = 2009
 VOLL = 10000
 CO2_price = 0.085
 
 m = Model(optimizer_with_attributes(Gurobi.Optimizer))
-define_sets!(m,scenario,year,CY)
-process_parameters!(m,scenario,year,CY)
-process_time_series!(m,scenario,year,CY)
+define_sets!(m,scenario,year,CY_cap,[])
+process_parameters!(m,scenario,year,CY_cap)
+process_time_series!(m,scenario,year,CY_ts)
 
 
 country = "AT00"
 length(m.ext[:timeseries][:hydro_inflow][country]["ROR"])
 
-build_NTC_model!(m,endtime,VOLL,CO2_price)
+build_NTC_model!(m,endtime,VOLL)
 optimize!(m)
 
 

@@ -12,10 +12,10 @@ df_gen = df_gen.rename(columns={"Node/Line" : "Node"})
 ###
 #Creating file with all generator present in dataset, and their total capacities
 ####
-generators = set(df_gen["Generator_ID"])
-gen_cap_dict = {generator : sum(df_gen[ (df_gen["Generator_ID"] == generator) & (df_gen["Year"] == 2030) ].Value)/1000 for generator in generators}
-df_generator_id = pd.DataFrame.from_dict(gen_cap_dict, orient= 'index')
-df_generator_id.to_csv("../Input Data/list_of_generators_2030.csv")
+# generators = set(df_gen["Generator_ID"])
+# gen_cap_dict = {generator : sum(df_gen[ (df_gen["Generator_ID"] == generator) & (df_gen["Year"] == 2030) ].Value)/1000 for generator in generators}
+# df_generator_id = pd.DataFrame.from_dict(gen_cap_dict, orient= 'index')
+# df_generator_id.to_csv("../Input Data/list_of_generators_2030.csv")
 ######
 
 df_gen_dict = pd.read_excel(io = "../Input Data/Mapping_generators.xlsx",engine = 'openpyxl',sheet_name= "Mapping" )
@@ -51,5 +51,5 @@ df_gen.to_csv("../Input Data/gen_cap_all.csv")
 df_gen_mapped.to_csv("../Input Data/gen_cap.csv")
 
 df_lines.to_csv("../Input Data/lines_all.csv")
-df_lines_mapped.to_csv("../Input Data/lines.csv")
+#df_lines_mapped.to_csv("../Input Data/lines.csv")
 

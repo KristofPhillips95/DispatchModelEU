@@ -7,7 +7,7 @@ using DataFrames
 using CSV
 
 ##
-function define_sets!(m::Model,scenario::String,year::Int,CY::Int)
+function define_sets!(m::Model,scenario::String,year::Int,CY::Int,excluded_nodes)
 
     #Initialize empty sets
     m.ext[:sets] = Dict()
@@ -25,19 +25,19 @@ function define_sets!(m::Model,scenario::String,year::Int,CY::Int)
     m.ext[:sets][:connections] = Dict()
 
     #Technology type sets
-    define_technology_type_sets!(m,scenario,year,CY)
+    define_technology_type_sets!(m,scenario,year,CY,excluded_nodes)
 
     #Connection sets
     define_connection_sets!(m,scenario,year,CY)
 end
 
-function define_technology_type_sets!(m::Model,scenario::String,year::Int,CY::Int)
+function define_technology_type_sets!(m::Model,scenario::String,year::Int,CY::Int,excluded_nodes =[])
     reading = CSV.read("Input Data\\gen_cap.csv",DataFrame)
     reading = reading[reading[!,"Scenario"] .== scenario,:]
     reading = reading[reading[!,"Year"] .== year,:]
     reading = reading[reading[!,"Climate Year"] .== CY,:]
 
-    m.ext[:sets][:countries] = [country for country in Set(reading[!,"Node"])]
+    m.ext[:sets][:countries] = [country for country in setdiff(Set(reading[!,"Node"]),Set(excluded_nodes))]
 
     for country in m.ext[:sets][:countries]
         technologies = setdiff(Set(reading[reading[!,"Node"] .== country,:Generator_ID]),Set(["DSR"]))
@@ -77,7 +77,7 @@ function define_connection_sets!(m::Model,scenario::String,year::Int,CY::Int)
     m.ext[:sets][:connections] = Dict(country => [] for country in m.ext[:sets][:countries])
     for country in m.ext[:sets][:countries]
         reading_lines_country = reading_lines[reading_lines[!,"Node1"] .== country,:]
-        for other_country in reading_lines_country.Node2
+        for other_country in intersect(reading_lines_country.Node2,m.ext[:sets][:countries])
             if !(other_country in m.ext[:sets][:connections][country])
                 m.ext[:sets][:connections][country] = vcat(m.ext[:sets][:connections][country],other_country)
             end
@@ -101,7 +101,6 @@ function process_parameters!(m::Model,scenario::String,year::Int,CY::Int)
     m.ext[:parameters][:DSR][:capacities] = Dict()
     m.ext[:parameters][:DSR][:horizons] = Dict()
 
-
     #Power generation capacities
     m.ext[:parameters][:technologies][:capacities] = Dict()
     m.ext[:parameters][:technologies][:energy_capacities] = Dict()
@@ -118,17 +117,24 @@ function process_parameters!(m::Model,scenario::String,year::Int,CY::Int)
     process_line_capacities!(m,scenario,year,CY,countries)
     process_hydro_energy_capacities!(m,countries)
     process_battery_energy_capacities!(m,countries)
-    process_DSR_capacities(m,countries,scenario)
-    process_flat_generation(m,countries,scenario)
+    process_DSR_capacities(m,countries,scenario,CY)
+    process_flat_generation(m,countries,scenario,CY)
+    process_co2_price(m,year)
 end
 
+function process_co2_price(m,year::Int64)
+    reading_co2 = CSV.read("Input Data\\Techno-economic parameters\\co2_price.csv",DataFrame)
+    m.ext[:parameters][:CO2_price] = reading_co2[1,string(year)]/1000
+
+end
 function process_power_generation_parameters!(m::Model,scenario::String,year::Int,CY::Int,countries,technologies)
     reading = CSV.read("Input Data\\gen_cap.csv",DataFrame)
     reading = reading[reading[!,"Scenario"] .== scenario,:]
     reading = reading[reading[!,"Year"] .== year,:]
     reading = reading[reading[!,"Climate Year"] .== CY,:]
 
-    reading_technical = CSV.read("Input Data\\Techno-economic parameters\\Generator_efficiencies.csv",DataFrame)[1:18,:]
+    reading_technical = CSV.read("Input Data\\Techno-economic parameters\\Generator_efficiencies.csv",DataFrame)
+    fuel_prices = CSV.read("Input Data\\Techno-economic parameters\\fuel_costs.csv",DataFrame)
 
     for country in countries
         m.ext[:parameters][:technologies][:capacities][country] = Dict()
@@ -140,15 +146,21 @@ function process_power_generation_parameters!(m::Model,scenario::String,year::In
 
         reading_country = reading[reading[!,"Node"] .== country,:]
         for technology in technologies[country]
+            #@show(technology)
             capacity = reading_country[reading_country[!,"Generator_ID"] .== technology,:].Value
             #@assert(length(capacity) == 1)
             m.ext[:parameters][:technologies][:capacities][country][technology] = sum(capacity)
             efficiency = reading_technical[reading_technical[!,"Generator_ID"] .== technology,"efficiency"][1]
             availability = 1 - reading_technical[reading_technical[!,"Generator_ID"] .== technology,"Unavailability"][1]
             VOM = reading_technical[reading_technical[!,"Generator_ID"] .== technology,"VOM"][1]
-            fuel_cost = reading_technical[reading_technical[!,"Generator_ID"] .== technology,"fuel_cost(euro/MWh)"][1]
+            fuel = reading_technical[reading_technical[!,"Generator_ID"] .== technology,"fuel_type"][1]
             emissions = reading_technical[reading_technical[!,"Generator_ID"] .== technology,"emissions(kg/MWh)"][1]
 
+            if fuel != "None"
+                fuel_cost = fuel_prices[fuel_prices.FT .== fuel,string(year)][1]*3.6
+            else
+                fuel_cost = 0
+            end
 
             m.ext[:parameters][:technologies][:efficiencies][country][technology] = efficiency
             m.ext[:parameters][:technologies][:availabilities][country][technology] = availability
@@ -173,13 +185,10 @@ function process_line_capacities!(m::Model,scenario::String,year::Int,CY::Int,co
         m.ext[:parameters][:connections][country] = Dict()
     end
     # Extract line capacities from data file
-    for country in Set(reading_lines.Node1)
+    for country in intersect(Set(reading_lines.Node1),m.ext[:sets][:countries])
         reading_country = reading_lines[(reading_lines[!,"Node1"] .== country),:]
-        for node_2 in Set(reading_country.Node2)
+        for node_2 in intersect(Set(reading_country.Node2),m.ext[:sets][:countries])
             capacity_imp = reading_country[(reading_country[!,"Node2"] .== node_2).&(reading_country[!,"Parameter"] .== "Import Capacity"),:].Value
-            # if (country == "BE00" && node_2 == "DE00")
-            #     @show(reading_country[(reading_country[!,"Node2"] .== node_2).&(reading_country[!,"Parameter"] .== "Import Capacity"),:])
-            # end
             m.ext[:parameters][:connections][country][node_2] = abs.(capacity_imp)
             capacity_exp = reading_country[(reading_country[!,"Node2"] .== node_2).&(reading_country[!,"Parameter"] .== "Export Capacity"),:].Value
             m.ext[:parameters][:connections][node_2][country] = abs.(capacity_exp)
@@ -234,7 +243,7 @@ function process_battery_energy_capacities!(m,countries)
     end
 end
 
-function process_DSR_capacities(m,countries,scenario)
+function process_DSR_capacities(m,countries,scenario,CY)
     reading = CSV.read("Input Data\\gen_cap.csv",DataFrame)
     reading = reading[reading[!,"Scenario"] .== scenario,:]
     reading = reading[reading[!,"Year"] .== year,:]
@@ -254,7 +263,7 @@ function process_DSR_capacities(m,countries,scenario)
     end
 end
 
-function process_flat_generation(m,countries,scenario)
+function process_flat_generation(m,countries,scenario,CY)
     reading = CSV.read("Input Data\\gen_prod.csv",DataFrame)
     reading = reading[reading[!,"Scenario"] .== scenario,:]
     reading = reading[reading[!,"Year"] .== year,:]
@@ -281,14 +290,14 @@ function process_time_series!(m::Model,scenario::String,year,CY)
     process_hydro_inflow_time_series!(m,countries,CY)
 end
 
-function process_demand_time_series!(m::Model, scenario::String,countries,year)
-    scenario_dict = Dict("Distributed Energy" => "DE","Global Ambition" => "GA","National Trends" => "NT")
-    filename = string(scenario_dict[scenario],"2040_Demand_CY1984.csv")
-    demand_reading = CSV.read(joinpath("Input Data",filename),DataFrame)
-    for country in countries
-        m.ext[:timeseries][:demand][country] = demand_reading[!,country]
-    end
-end
+# function process_demand_time_series!(m::Model, scenario::String,countries,year)
+#     scenario_dict = Dict("Distributed Energy" => "DE","Global Ambition" => "GA","National Trends" => "NT")
+#     filename = string(scenario_dict[scenario],"2040_Demand_CY1984.csv")
+#     demand_reading = CSV.read(joinpath("Input Data",filename),DataFrame)
+#     for country in countries
+#         m.ext[:timeseries][:demand][country] = demand_reading[!,country]
+#     end
+# end
 
 function process_demand_time_series!(m::Model, scenario::String,countries,year,CY)
     scenario_dict = Dict("Distributed Energy" => "DistributedEnergy","Global Ambition" => "GlobalAmbition","National Trends" => "NationalTrends")
@@ -424,7 +433,8 @@ end
 
 
 ##
-function build_base_model!(m::Model,endtime,VOLL,CO2_price)
+function build_base_model!(m::Model,endtime,VOLL)
+    CO2_price = m.ext[:parameters][:CO2_price]
     countries =  m.ext[:sets][:countries]
     timesteps = collect(1:endtime)
 
@@ -519,7 +529,7 @@ function build_base_model!(m::Model,endtime,VOLL,CO2_price)
     m.ext[:constraints][:production_capacity] = @constraint(m,[c = countries, tech = technologies[c],time = timesteps],
     0<=production[c,tech,time] <=  capacities[c][tech]
     )
-    #Production must be positive and respect the installed capacity for all technologies
+    #Production of flat run technologies
     m.ext[:constraints][:production_flat_runs] = @constraint(m,[c = countries, tech = flat_run_technologies[c],time = timesteps],
     production[c,tech,time] <=  total_gen[c][tech]/8760*1000
     )
@@ -531,14 +541,16 @@ function build_base_model!(m::Model,endtime,VOLL,CO2_price)
     m.ext[:constraints][:curtailment_pos] = @constraint(m,[c = countries,time = timesteps],
     0<=curtailment[c,time]
     )
+    #Curtailment must at all times be smaller than renewable production
     m.ext[:constraints][:curtailment_max] = @constraint(m,[c = countries,time = timesteps],
     curtailment[c,time]<= renewable_production[c,time]
     )
 
-    #Curtailment must at all times be positive
+    #Charging must at all times be positive
     m.ext[:constraints][:charge_pos] = @constraint(m,[c = countries,tech=storage_technologies[c],time = timesteps],
     0<=charge[c,tech,time]
     )
+    #Water dumping must at all times be positive
     m.ext[:constraints][:charge_pos] = @constraint(m,[c = countries,tech=hydro_flow_technologies_without_pumping[c],time = timesteps],
     0<=water_dumping[c,tech,time]
     )
@@ -683,9 +695,9 @@ function build_isolated_model_DSR_shift!(m::Model,endtime,VOLL,CO2_price,DSR_pri
     m.ext[:objective] = @objective(m,Min, sum(VOM_cost) + sum(CO2_cost) + sum(fuel_cost) + sum(load_shedding_cost) + sum(DSR_cost))
 end
 
-function build_NTC_model!(m:: Model,endtime,VOLL,CO2_price)
+function build_NTC_model!(m:: Model,endtime,VOLL,transport_cost)
 
-        build_base_model!(m,endtime,VOLL,CO2_price)
+        build_base_model!(m,endtime,VOLL)
 
         countries = m.ext[:sets][:countries]
         timesteps = collect(1:endtime)
@@ -724,12 +736,12 @@ function build_NTC_model!(m:: Model,endtime,VOLL,CO2_price)
         fuel_cost = m.ext[:expressions][:fuel_cost]
         load_shedding_cost = m.ext[:expressions][:load_shedding_cost]
         CO2_cost = m.ext[:expressions][:CO2_cost]
-        transport_cost =m.ext[:expressions][:transport_cost]= el_import*0.1
+        transport_cost =m.ext[:expressions][:transport_cost]= el_import*transport_cost
         m.ext[:objective] = @objective(m,Min, sum(VOM_cost) + sum(CO2_cost) + sum(fuel_cost) + sum(load_shedding_cost) + sum(transport_cost))
 end
-function build_NTC_model_DSR!(m:: Model,endtime,VOLL,CO2_price,DSR_price)
+function build_NTC_model_DSR!(m:: Model,endtime,VOLL,DSR_price,transport_cost)
 
-        build_base_model!(m,endtime,VOLL,CO2_price)
+        build_base_model!(m,endtime,VOLL)
 
         countries = m.ext[:sets][:countries]
         dsr_capacities = m.ext[:parameters][:DSR][:capacities]
@@ -757,7 +769,7 @@ function build_NTC_model_DSR!(m:: Model,endtime,VOLL,CO2_price,DSR_price)
         DSR[c,t] * DSR_price
         )
         m.ext[:constraints][:DSR_pos] = @constraint(m, [c = countries, t = timesteps],
-        0<= DSR[c,t] <= dsr_capacities[c]/4 )
+        0<= DSR[c,t] <= dsr_capacities[c] )
 
 
         m.ext[:constraints][:import] = @constraint(m,[c = countries, neighbor = connections[c] ,time = timesteps],
@@ -778,7 +790,7 @@ function build_NTC_model_DSR!(m:: Model,endtime,VOLL,CO2_price,DSR_price)
         fuel_cost = m.ext[:expressions][:fuel_cost]
         load_shedding_cost = m.ext[:expressions][:load_shedding_cost]
         CO2_cost = m.ext[:expressions][:CO2_cost]
-        transport_cost =m.ext[:expressions][:transport_cost]= el_import*0.1
+        transport_cost =m.ext[:expressions][:transport_cost]= el_import*transport_cost
         m.ext[:objective] = @objective(m,Min, sum(VOM_cost) + sum(CO2_cost) + sum(fuel_cost) + sum(load_shedding_cost) + sum(transport_cost) + sum(DSR_cost))
 end
 
@@ -873,6 +885,24 @@ function fix_soc_decisions(m::Model,soc_given,production_given,timesteps,country
     )
 end
 
+function fix_soc_decisions_from_dict(m::Model,soc_given,production_given,timesteps,country)
+    countries = filter!(e->e !=country,m.ext[:sets][:countries] )
+    soc_technologies = m.ext[:sets][:soc_technologies]
+    storage_technologies = m.ext[:sets][:storage_technologies]
+
+    soc = m.ext[:variables][:soc]
+    production = m.ext[:variables][:production]
+    charge = m.ext[:variables][:charge]
+    m.ext[:constraints][:soc_fixed] = @constraint(m,[c = countries, tech = soc_technologies[c] ,time = timesteps],
+        soc[c,tech,time] == soc_given[(c,tech,time)]
+    )
+    m.ext[:constraints][:soc_production_fixe] = @constraint(m,[c = countries, tech = soc_technologies[c] ,time = timesteps],
+        production[c,tech,time] == production_given[(c,tech,time)]
+    )
+    m.ext[:constraints][:charge_zero] = @constraint(m,[tech = storage_technologies[country] ,time = timesteps],
+        charge[country,tech,time] == 0
+    )
+end
 function fix_DSR_decisions(m::Model,DSR_up_given,DSR_down_given,timesteps,country)
     countries = filter!(e->e !=country,m.ext[:sets][:countries] )
     DSR_up = m.ext[:variables][:DSR_up]
@@ -884,4 +914,9 @@ function fix_DSR_decisions(m::Model,DSR_up_given,DSR_down_given,timesteps,countr
     m.ext[:constraints][:DSR_down_fixed] = @constraint(m,[c = countries ,time = timesteps,t_from = time-dsr_horizons[c]:time+dsr_horizons[c]],
         DSR_down[c,time,t_from] == DSR_down_given[c,time,t_from]
     )
+end
+
+function reset_constraint_production(country,import_level)
+
+
 end
