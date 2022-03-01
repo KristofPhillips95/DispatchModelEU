@@ -74,12 +74,22 @@ end
 function check_net_import(m,country,import_level,endtime)
     net_import = [sum(JuMP.value.(m.ext[:variables][:import][country,nb,t]) - JuMP.value.(m.ext[:variables][:export][country,nb,t]) for nb in m.ext[:sets][:connections][country]) for t in 1:endtime]
     for t in 1:endtime
-        @assert( round(net_import[t],digits = 5)  == import_level)
+        @assert( round(net_import[t] + JuMP.value.(m.ext[:variables][:load_shedding][country,t]) ,digits = 3)  == import_level)
     end
 end
 
+function check_charge_zero(m,country,endtime)
+    for t in 1:endtime
+        ls = sum(JuMP.value.(m.ext[:variables][:charge][country,tech,t]) for tech in m.ext[:sets][:storage_technologies][country])
+        @assert( round(ls, digits=3) == 0 )
+    end
+end
+
+
 function optimize_and_retain_intertemporal_decisions_DSR_shift(scenario::String,year::Int,CY::Int,endtime,VOLL,CO2_price,sheddable_fraction)
     m = Model(optimizer_with_attributes(Gurobi.Optimizer))
+    set_optimizer_attribute(m, "Method", 1)
+
     define_sets!(m,scenario,year,CY)
     process_parameters!(m,scenario,year,CY)
     process_time_series!(m,scenario)
@@ -96,6 +106,7 @@ end
 function optimize_and_retain_intertemporal_decisions_DSR_simple(scenario::String,year::Int,CY_cap::Int,CY_ts::Int,endtime::Int,VOLL::Int,DSR_price)
     #TODO This has to be implemented for DSR without shifting
     m = Model(optimizer_with_attributes(Gurobi.Optimizer))
+    set_optimizer_attribute(m, "Method", 1)
     define_sets!(m,scenario,year,CY_cap,[])
     process_parameters!(m,scenario,year,CY_cap)
     process_time_series!(m,scenario,year,CY_ts)

@@ -31,7 +31,7 @@ function define_sets!(m::Model,scenario::String,year::Int,CY::Int,excluded_nodes
     define_connection_sets!(m,scenario,year,CY)
 end
 
-function define_technology_type_sets!(m::Model,scenario::String,year::Int,CY::Int,excluded_nodes =[])
+function define_technology_type_sets!(m::Model,scenario::String,year::Int,CY::Int,excluded_nodes::Array=[])
     reading = CSV.read("Input Data\\gen_cap.csv",DataFrame)
     reading = reading[reading[!,"Scenario"] .== scenario,:]
     reading = reading[reading[!,"Year"] .== year,:]

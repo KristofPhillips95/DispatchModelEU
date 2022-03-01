@@ -3,23 +3,31 @@ using CSV
 using DataFrames
 using Plots
 
-import_level = "-5000"
+import_level = "0"
+year = 2030
+endtime = 24*365
+CY_ts = 2012
 
+scenario = "Distributed Energy"
+df = CSV.read("Results\\import_price_curvesDistributed Energy_$(year)_CY_$(CY_ts)_$(endtime).csv",DataFrame)
+prices = df[:,import_level]
+pdc = price_duration_curve(prices)
+pdc_array = [pdc[pl] for pl in sort(collect(keys(pdc)))]
+keys(pdc)
 
-scenario = "Global Ambition"
-scenarios = ["Global Ambition" "National Trends" "Distributed Energy"]
 plot()
-for scenario in scenarios
-    df = CSV.read("Results\\import_price_curves$(scenario).csv",DataFrame)
 
-    prices = df[:,import_level]
+df = CSV.read("Results\\import_price_curves$(scenario)_$(year)_CY_$(CY_ts)_$(endtime).csv",DataFrame)
 
-    pdc,price_levels = price_duration_curve(prices)
-    pdc_array = [pdc[pl] for pl in price_levels]
-    plot!(pdc_array,price_levels, ylabel = "Price", xlabel = "Number of hours", title = "Price duration curve import $(import_level) MW", label = scenario )
-end
+prices = df[:,import_level]
+price_levels = sort(collect(keys(pdc)),rev = true)
+
+pdc = price_duration_curve(prices)
+pdc_array = [pdc[pl] for pl in price_levels]
+plot!(pdc_array,price_levels, ylabel = "Price", xlabel = "Number of hours", title = "Price duration curve import $(import_level) MW", label = scenario )
+
 plot!()
-savefig("Results\\Price duration curve $(import_level)")
+savefig("Results\\Price duration curve$(scenario)_$(year)_CY_$(CY_ts)_$(endtime)_$(import_level)")
 
 
 ##
