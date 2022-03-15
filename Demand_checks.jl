@@ -9,19 +9,39 @@ total_demand = Dict()
 scenario = "Distributed Energy"
 #scenario = "Global Ambition"
 #scenario = "National Trends"
-endtime = 24*100
-year = 2030
+endtime = 24*10
+year = 2040
 CY_cap = 1984
 CY_ts = 2009
-VOLL = 10000
-CO2_price = 0.085
+VOLL = 8000
 
 m = Model(optimizer_with_attributes(Gurobi.Optimizer))
 define_sets!(m,scenario,year,CY_cap,[])
 process_parameters!(m,scenario,year,CY_cap)
 process_time_series!(m,scenario,year,CY_ts)
 
+m.ext[:parameters][:technologies][:fuel_cost]["BE00"]["CCGT"]
+m.ext[:parameters][:CO2_price]
 
+m.ext[:parameters][:technologies][:capacities]["BE00"]
+
+
+update_technologies_past_2040(m,2035)
+
+m.ext[:parameters][:technologies][:fuel_cost]["BE00"]["CCGT"]
+m.ext[:parameters][:CO2_price]
+m.ext[:parameters][:technologies][:capacities]["BE00"]
+
+
+build_NTC_model!(m,endtime,8000,0.1)
+optimize!(m)
+m.ext[:sets][:technologies]
+m.ext[:parameters]
+
+country = "BE00"
+
+
+m.ext[:sets][:technologies][country]
 country = "AT00"
 length(m.ext[:timeseries][:hydro_inflow][country]["ROR"])
 

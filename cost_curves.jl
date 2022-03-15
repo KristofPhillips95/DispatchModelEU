@@ -130,6 +130,21 @@ function optimize_and_retain_intertemporal_decisions_no_DSR(scenario::String,yea
     return m,soc,production
 end
 
+function optimize_and_retain_intertemporal_decisions_no_DSR(scenario::String,year::Int,CY_cap::Int,CY_ts,endtime,VOLL,ty)
+    m = Model(optimizer_with_attributes(Gurobi.Optimizer))
+    define_sets!(m,scenario,year,CY_cap,[])
+    process_parameters!(m,scenario,year,CY_cap)
+    process_time_series!(m,scenario,year,CY_ts)
+    update_technologies_past_2040(m,ty)
+    build_NTC_model!(m,endtime,VOLL,0.1)
+    #set_optimizer_attribute(m, "Method", 1)
+    optimize!(m)
+    soc = JuMP.value.(m.ext[:variables][:soc])
+    production = JuMP.value.(m.ext[:variables][:production])
+
+    return m,soc,production
+end
+
 function write_sparse_axis_to_dict(sparse_axis)
     dict =  Dict()
     for key in eachindex(sparse_axis)
@@ -155,6 +170,20 @@ function build_model_for_import_curve_no_DSR_from_dict(import_level,country,endt
     define_sets!(m,scenario,year,CY_cap,[])
     process_parameters!(m,scenario,year,CY_cap)
     process_time_series!(m,scenario,year,CY_ts)
+    remove_capacity_country(m,country)
+    set_demand_country(m,country,import_level)
+    build_NTC_model!(m,endtime,VOLL,transp_cost)
+    fix_soc_decisions_from_dict(m,soc,production,1:endtime,country)
+    #optimize!(m)
+    return m
+end
+
+function build_model_for_import_curve_no_DSR_from_dict_ty(import_level,country,endtime,soc,production,transp_cost,ty)
+    m = Model(optimizer_with_attributes(Gurobi.Optimizer))
+    define_sets!(m,scenario,year,CY_cap,[])
+    process_parameters!(m,scenario,year,CY_cap)
+    process_time_series!(m,scenario,year,CY_ts)
+    update_technologies_past_2040(m,ty)
     remove_capacity_country(m,country)
     set_demand_country(m,country,import_level)
     build_NTC_model!(m,endtime,VOLL,transp_cost)

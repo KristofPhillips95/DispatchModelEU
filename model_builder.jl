@@ -88,6 +88,7 @@ function define_connection_sets!(m::Model,scenario::String,year::Int,CY::Int)
     end
 end
 
+##
 function process_parameters!(m::Model,scenario::String,year::Int,CY::Int)
     countries = m.ext[:sets][:countries]
     technologies = m.ext[:sets][:technologies]
@@ -277,7 +278,7 @@ function process_flat_generation(m,countries,scenario,CY)
         end
     end
 end
-
+##
 function process_time_series!(m::Model,scenario::String,year,CY)
     countries = m.ext[:sets][:countries]
 
@@ -403,7 +404,7 @@ function process_hydro_inflow_time_series!(m::Model,countries,CY)
         end
     end
 end
-
+##
 function remove_capacity_country(m::Model,country::String)
     m.ext[:parameters][:DSR][:capacities][country] = 0
     for technology in m.ext[:sets][:technologies][country]
@@ -429,8 +430,63 @@ end
 function set_demand_country(m::Model,country::String,demand::Int)
     m.ext[:timeseries][:demand][country] .= demand
 end
+##
+function update_technologies_past_2040(m:: Model, year::Int)
+    if year == 2045
+        fraction = 0.5
+        update_technology_sets_and_capacities(m,fraction)
+    elseif year == 2050
+        fraction = 1
+        update_technology_sets_and_capacities(m,fraction)
+    end
+    update_fuel_prices_and_emissions(m,year)
+    process_co2_price(m,year)
+end
+function update_technology_sets_and_capacities(m::Model,fraction)
+    mapping = Dict("CCGT" => "CCGT_H2","OCGT" => "OCGT_H2","Coal" => "Coal_bio")
+    for country in m.ext[:sets][:countries]
+        for old_tech in keys(mapping)
+            if old_tech in m.ext[:sets][:technologies][country]
+                cap_old = m.ext[:parameters][:technologies][:capacities][country][old_tech]
+                new_tech = mapping[old_tech]
+                if !(new_tech in m.ext[:sets][:technologies][country])
+                    append!(m.ext[:sets][:technologies][country],[new_tech])
+                    append!(m.ext[:sets][:dispatchable_technologies][country],[new_tech])
+                    m.ext[:parameters][:technologies][:capacities][country][new_tech] = fraction * cap_old
+                    m.ext[:parameters][:technologies][:capacities][country][old_tech] = (1-fraction) * cap_old
+                else
+                    m.ext[:parameters][:technologies][:capacities][country][new_tech] += fraction * cap_old
+                    m.ext[:parameters][:technologies][:capacities][country][old_tech] = (1-fraction) * cap_old
+                end
+            end
+        end
+    end
+end
+function update_fuel_prices_and_emissions(m,year)
+    reading_technical = CSV.read("Input Data\\Techno-economic parameters\\Generator_efficiencies.csv",DataFrame)
+    fuel_prices = CSV.read("Input Data\\Techno-economic parameters\\fuel_costs.csv",DataFrame)
 
+    for country in m.ext[:sets][:countries]
+        for technology in m.ext[:sets][:technologies][country]
+            #println(technology)
+            fuel = reading_technical[reading_technical[!,"Generator_ID"] .== technology,"fuel_type"][1]
+            emissions = reading_technical[reading_technical[!,"Generator_ID"] .== technology,"emissions(kg/MWh)"][1]
+            efficiency = reading_technical[reading_technical[!,"Generator_ID"] .== technology,"efficiency"][1]
+            VOM = reading_technical[reading_technical[!,"Generator_ID"] .== technology,"VOM"][1]
 
+            if fuel != "None"
+                fuel_cost = fuel_prices[fuel_prices.FT .== fuel,string(year)][1]*3.6
+            else
+                fuel_cost = 0
+            end
+            m.ext[:parameters][:technologies][:fuel_cost][country][technology] = fuel_cost
+            m.ext[:parameters][:technologies][:emissions][country][technology] = emissions
+            m.ext[:parameters][:technologies][:efficiencies][country][technology] = efficiency
+            m.ext[:parameters][:technologies][:VOM][country][technology] = VOM
+
+        end
+    end
+end
 
 ##
 function build_base_model!(m::Model,endtime,VOLL)
@@ -914,9 +970,4 @@ function fix_DSR_decisions(m::Model,DSR_up_given,DSR_down_given,timesteps,countr
     m.ext[:constraints][:DSR_down_fixed] = @constraint(m,[c = countries ,time = timesteps,t_from = time-dsr_horizons[c]:time+dsr_horizons[c]],
         DSR_down[c,time,t_from] == DSR_down_given[c,time,t_from]
     )
-end
-
-function reset_constraint_production(country,import_level)
-
-
 end

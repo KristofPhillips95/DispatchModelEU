@@ -3,33 +3,102 @@ using CSV
 using DataFrames
 using Plots
 
-import_level = "0"
-year = 2030
+import_level = "5000"
+
+
+
+year = 2040
 endtime = 24*365
 CY_ts = 2012
 
 scenario = "Distributed Energy"
-df = CSV.read("Results\\import_price_curvesDistributed Energy_$(year)_CY_$(CY_ts)_$(endtime).csv",DataFrame)
-prices = df[:,import_level]
-pdc = price_duration_curve(prices)
-pdc_array = [pdc[pl] for pl in sort(collect(keys(pdc)))]
-keys(pdc)
+#scenario = "National Trends"
+
 
 plot()
 
 df = CSV.read("Results\\import_price_curves$(scenario)_$(year)_CY_$(CY_ts)_$(endtime).csv",DataFrame)
 
 prices = df[:,import_level]
+pdc,levels = price_duration_curve(prices)
 price_levels = sort(collect(keys(pdc)),rev = true)
 
-pdc = price_duration_curve(prices)
-pdc_array = [pdc[pl] for pl in price_levels]
-plot!(pdc_array,price_levels, ylabel = "Price", xlabel = "Number of hours", title = "Price duration curve import $(import_level) MW", label = scenario )
+
+
+prices_without_voll = filter(p -> p <7999 , prices)
+
+
+histogram(prices,bins = 200)
+
+savefig("Results\\Price histogram $(scenario)_$(year)_CY_$(CY_ts)_$(endtime)_$(import_level)")
+
+histogram(prices_without_voll,bins = 200)
+price_levels = sort(collect(keys(pdc)),rev = true)
+
+savefig("Results\\Price histogram without voll $(scenario)_$(year)_CY_$(CY_ts)_$(endtime)_$(import_level)")
+
+
+
+pdc_array = [pdc[pl] for pl in levels]
+
+plot(pdc_array,levels, ylabel = "Price", xlabel = "Number of hours", title = "Price duration curve import $(import_level) MW")
 
 plot!()
 savefig("Results\\Price duration curve$(scenario)_$(year)_CY_$(CY_ts)_$(endtime)_$(import_level)")
+##
+imp_lvs = ["-5000" "-3000" "-1000" "1000" "3000" "5000"]
 
+year = 2040
+endtime = 24*365
+CY_ts = 2012
 
+scenario = "Distributed Energy"
+#scenario = "National Trends"
+
+df = CSV.read("Results\\import_price_curves$(scenario)_$(year)_CY_$(CY_ts)_$(endtime).csv",DataFrame)
+
+p1 = plot()
+p2 = plot()
+for import_level in imp_lvs
+    prices = df[:,import_level]
+    prices_without_voll = filter(p -> p <7999 , prices)
+
+    pdc,levels = price_duration_curve(prices)
+    pdc_array = [pdc[pl] for pl in levels]
+
+    if 8000.0 in keys(pdc)
+        nb_hours_voll = pdc[8000.0]
+    else
+        nb_hours_voll = 0
+    end
+    pdc_2,levels_2 = price_duration_curve(prices_without_voll)
+    pdc_array_2 = [pdc_2[pl] for pl in levels_2]
+
+    plot!(p1, pdc_array,levels, ylabel = "Price", xlabel = "Number of hours", title = "Price duration curve import $(scenario), $year",label = import_level)
+
+    plot!(p2, pdc_array_2.+nb_hours_voll,levels_2, ylabel = "Price", xlabel = "Number of hours", title = "Price duration curve import $(scenario), $year",label = import_level)
+    println(import_level, nb_hours_voll)
+end
+plot(p1)
+savefig("Results\\Price duration curves$(scenario)_$(year)_CY_$(CY_ts)_$(endtime)_several_levels")
+plot(p2)
+savefig("Results\\Price duration curves$(scenario)_$(year)_CY_$(CY_ts)_$(endtime)_several_levels_VOLL_EXCL")
+
+##
+import_level = "-5000"
+prices = df[:,import_level]
+prices_without_voll = filter(p -> p <7999 , prices)
+
+pdc,levels = price_duration_curve(prices)
+pdc_array = [pdc[pl] for pl in levels]
+
+if 8000.0 in keys(pdc)
+    nb_hours_voll = pdc[8000.0]
+else
+    nb_hours_voll = 0
+end
+pdc_2,levels_2 = price_duration_curve(prices_without_voll)
+pdc_array_2 = [pdc_2[pl] for pl in levels_2]
 ##
 function price_duration_curve(prices)
     levels = Set(prices)
@@ -38,6 +107,10 @@ function price_duration_curve(prices)
     price_count_dict = Dict(level => count(x-> x >=level, prices) for level in levels)
     return price_count_dict,levels
 end
+##
+plot([production_dict["FR00","Nuclear",t] for t in 1:8760])
+plot([production_dict["FR00","CCGT",t] for t in 1:8760])
+plot([production_dict["DE00","CCGT",t] for t in 1:8760])
 ##
 t = 1067
 plot()
